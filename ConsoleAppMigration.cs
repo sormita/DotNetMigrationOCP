@@ -7,6 +7,7 @@ using System.IO;
 using LibGit2Sharp;
 using System.Linq;
 using System;
+using System.Configuration;
 
 namespace DotNetMigrationTool
 {
@@ -14,7 +15,7 @@ namespace DotNetMigrationTool
     {
         //public static async Task GetProjectFilesAsync(string repo, string owner, string branch, string applicationFolder)
         //{
-        //    string ghtoken = "2c0d060c49fc52d582739a58dc990f56e171dad5";
+        //    string ghtoken = "dfaaa38be43e1c4a045d5077109b452aaf479879";
         //    var ghClient = new GitHubClient(new Octokit.ProductHeaderValue("dotnetconsoleapp-migrate"));
         //    ghClient.Credentials = new Octokit.Credentials(ghtoken);
 
@@ -52,7 +53,7 @@ namespace DotNetMigrationTool
 
         public static async Task CloneRepository(string repo, string owner)
         {
-            string ghtoken = "2c0d060c49fc52d582739a58dc990f56e171dad5";
+            string ghtoken = "dfaaa38be43e1c4a045d5077109b452aaf479879";
             var ghClient = new GitHubClient(new Octokit.ProductHeaderValue("dotnetconsoleapp-migrate"));
             ghClient.Credentials = new Octokit.Credentials(ghtoken);
 
@@ -69,6 +70,8 @@ namespace DotNetMigrationTool
         public static async Task ModifyFilesToFitMigration(string filePath,string owner)
         {
             ModifyDotNetVersion(filePath);
+
+            UpdatePackageReference(filePath).Wait();
 
             //Check in the file to a new repository
             CommitFileToRepository(owner, filePath);
@@ -103,10 +106,53 @@ namespace DotNetMigrationTool
             }
         }
 
-        //public static void UpdatePackageReference(string filePath)
-        //{
-        //    string package
-        //}
+        public static async Task UpdatePackageReference(string filePath)
+        {
+            try
+            {
+                string[] files = Directory.GetFiles(filePath, "*.csproj", SearchOption.AllDirectories);
+                for (int i = 0; i < files.Length; i++)
+                {
+                    string text = File.ReadAllText(files[i]);
+                    XmlDocument xdoc = new XmlDocument();
+                    xdoc.LoadXml(text);
+                    if (xdoc.GetElementsByTagName("PackageReference").Count > 0)
+                    {
+                        for (int j = 0; j < xdoc.GetElementsByTagName("PackageReference").Count; j++)
+                        {                            
+                            string[] packageNameArray = xdoc.GetElementsByTagName("PackageReference")[j].OuterXml.Split('=');
+                            string strPackageName = packageNameArray[1].Replace(" Version", "").Replace('"',' ').Trim();
+                            string strOldVersion = packageNameArray[2];
+                            string latestVersion = null;
+                            var nugetUrl = ConfigurationManager.AppSettings["packageManager"];
+                            var url = nugetUrl + strPackageName + "/index.json";
+
+                            using (HttpClient _httpClient = new HttpClient())
+                            {
+                                using (HttpResponseMessage response = _httpClient.GetAsync(url).Result)
+                                {
+                                    response.EnsureSuccessStatusCode();
+                                    string responseBody = await response.Content.ReadAsStringAsync();
+                                    responseBody = responseBody.Substring(responseBody.IndexOf('['));
+                                    responseBody = responseBody.Replace('}', ' ').Replace('[', ' ').Replace(']', ' ');
+                                    string[] responses = responseBody.Split(',');
+                                    latestVersion = responses[^1].Trim(); //This will fetch the latest version of the package from npm
+                                }
+                            }
+
+                            text = text.Replace(strOldVersion, latestVersion);
+                            File.WriteAllText(files[i], text);
+                        }
+                    }
+                }
+                                
+            }
+            catch(Exception ex)
+            {
+                throw ex;
+            }
+
+        }
 
         public static void UpdateDockerFile(string filePath)
         {
@@ -124,7 +170,7 @@ namespace DotNetMigrationTool
                 Private = false                
             };
 
-            string ghtoken = "2c0d060c49fc52d582739a58dc990f56e171dad5";
+            string ghtoken = "dfaaa38be43e1c4a045d5077109b452aaf479879";
             var ghClient = new GitHubClient(new Octokit.ProductHeaderValue("MigratedConsoleApp"));
             ghClient.Credentials = new Octokit.Credentials(ghtoken);
 
@@ -157,7 +203,7 @@ namespace DotNetMigrationTool
                     var options = new PushOptions
                     {
                         CredentialsProvider = (_url, _user, _cred) =>
-                            new UsernamePasswordCredentials { Username = "sormita@gmail.com", Password = "2c0d060c49fc52d582739a58dc990f56e171dad5" }
+                            new UsernamePasswordCredentials { Username = "sormita@gmail.com", Password = "dfaaa38be43e1c4a045d5077109b452aaf479879" }
                     };
 
                     string pushRefSpec = @"refs/heads/master";
