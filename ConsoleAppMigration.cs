@@ -15,7 +15,7 @@ namespace DotNetMigrationTool
     {
         //public static async Task GetProjectFilesAsync(string repo, string owner, string branch, string applicationFolder)
         //{
-        //    string ghtoken = "dfaaa38be43e1c4a045d5077109b452aaf479879";
+        //    string ghtoken = "4bc4b5e44039c91d404439f0dc384fb000ab4e8c";
         //    var ghClient = new GitHubClient(new Octokit.ProductHeaderValue("dotnetconsoleapp-migrate"));
         //    ghClient.Credentials = new Octokit.Credentials(ghtoken);
 
@@ -53,18 +53,28 @@ namespace DotNetMigrationTool
 
         public static async Task CloneRepository(string repo, string owner)
         {
-            string ghtoken = "dfaaa38be43e1c4a045d5077109b452aaf479879";
-            var ghClient = new GitHubClient(new Octokit.ProductHeaderValue("dotnetconsoleapp-migrate"));
-            ghClient.Credentials = new Octokit.Credentials(ghtoken);
+            try
+            {
+                Console.WriteLine("Cloning the repository to a local volume");
+                string ghtoken = "4bc4b5e44039c91d404439f0dc384fb000ab4e8c";
+                var ghClient = new GitHubClient(new Octokit.ProductHeaderValue("dotnetconsoleapp-migrate"));
+                ghClient.Credentials = new Octokit.Credentials(ghtoken);
 
-            var archiveBytes = ghClient.Repository.Content.GetArchive(owner, repo,ArchiveFormat.Zipball).Result;
-            string path = @"C:\Users\SormitaChakraborty\source\repos\DotNetMigration\WorkingDirectory\"+ repo + ".zip";
-            string extractPath = @"C:\Users\SormitaChakraborty\source\repos\DotNetMigration\WorkingDirectory\" + repo;
-            File.WriteAllBytes(path, archiveBytes);
+                var archiveBytes = ghClient.Repository.Content.GetArchive(owner, repo, ArchiveFormat.Zipball).Result;
+                string path = @"C:\Users\SormitaChakraborty\source\repos\DotNetMigration\WorkingDirectory\" + repo + ".zip";
+                string extractPath = @"C:\Users\SormitaChakraborty\source\repos\DotNetMigration\WorkingDirectory\" + repo;
+                File.WriteAllBytes(path, archiveBytes);
 
-            //Extract the files
-            System.IO.Compression.ZipFile.ExtractToDirectory(path, extractPath);
-            ModifyFilesToFitMigration(extractPath,owner).Wait();
+                Console.WriteLine("Extracting the files to a local volume");
+                //Extract the files
+                System.IO.Compression.ZipFile.ExtractToDirectory(path, extractPath);
+                ModifyFilesToFitMigration(extractPath, owner).Wait();
+            }
+            catch(Exception ex)
+            {
+                throw ex;
+            }
+            
         }
 
         public static async Task ModifyFilesToFitMigration(string filePath,string owner)
@@ -73,6 +83,8 @@ namespace DotNetMigrationTool
 
             UpdatePackageReference(filePath).Wait();
 
+            UpdateDockerFile(filePath);
+
             //Check in the file to a new repository
             CommitFileToRepository(owner, filePath);
 
@@ -80,36 +92,47 @@ namespace DotNetMigrationTool
 
         public static void ModifyDotNetVersion(string filePath)
         {
-            //Modify csproj file to update the version to core 5.0
-            string[] files = Directory.GetFiles(filePath, "*.csproj", SearchOption.AllDirectories);
-            string newNetVersion = "<TargetFramework>net50</TargetFramework>";
-
-            for (int i = 0; i < files.Length; i++)
+            try
             {
-                string text = File.ReadAllText(files[i]);
-                string subText = text.Substring(text.IndexOf("<TargetFramework>"), 40);
+                Console.WriteLine("Modifying the dotnet version");
+                //Modify csproj file to update the version to core 5.0
+                string[] files = Directory.GetFiles(filePath, "*.csproj", SearchOption.AllDirectories);
+                string newNetVersion = "<TargetFramework>net50</TargetFramework>";
 
-                if (subText.Length > 0)
+                for (int i = 0; i < files.Length; i++)
                 {
-                    string oldNetVersion = subText;
+                    string text = File.ReadAllText(files[i]);
+                    string subText = text.Substring(text.IndexOf("<TargetFramework>"), 40);
 
-                    text = text.Replace(oldNetVersion, newNetVersion);
+                    if ((subText.Length > 0)&&(!(subText.Contains("netstandard2.0"))))
+                    {
+                        string oldNetVersion = subText;
+
+                        text = text.Replace(oldNetVersion, newNetVersion);
+                    }
+                    else
+                    {
+                        subText = text.Substring(text.IndexOf("<TargetFramework>"), 49);
+                        text = text.Replace(subText, newNetVersion);
+                    }
+
+
+                    File.WriteAllText(files[i], text);
+                    Console.WriteLine("Completed modifying the dotnet version");
                 }
-                else
-                {
-                    subText = text.Substring(text.IndexOf("<TargetFramework>"), 49);
-                    text = text.Replace(subText, newNetVersion);
-                }
-
-
-                File.WriteAllText(files[i], text);
             }
+            catch(Exception ex)
+            {
+                throw ex;
+            }
+            
         }
 
         public static async Task UpdatePackageReference(string filePath)
         {
             try
             {
+                Console.WriteLine("Updating the package reference.");
                 string[] files = Directory.GetFiles(filePath, "*.csproj", SearchOption.AllDirectories);
                 for (int i = 0; i < files.Length; i++)
                 {
@@ -136,7 +159,7 @@ namespace DotNetMigrationTool
                                     responseBody = responseBody.Substring(responseBody.IndexOf('['));
                                     responseBody = responseBody.Replace('}', ' ').Replace('[', ' ').Replace(']', ' ');
                                     string[] responses = responseBody.Split(',');
-                                    latestVersion = responses[^1].Trim(); //This will fetch the latest version of the package from npm
+                                    latestVersion = responses[^1].Trim() + "/>"; //This will fetch the latest version of the package from npm
                                 }
                             }
 
@@ -145,7 +168,7 @@ namespace DotNetMigrationTool
                         }
                     }
                 }
-                                
+                Console.WriteLine("Completed updating the package reference.");
             }
             catch(Exception ex)
             {
@@ -156,35 +179,60 @@ namespace DotNetMigrationTool
 
         public static void UpdateDockerFile(string filePath)
         {
-
+            try
+            {
+                Console.WriteLine("Updating the docker file.");
+                string[] files = Directory.GetFiles(filePath, "Dockerfile", SearchOption.AllDirectories);
+                for (int i = 0; i < files.Length; i++)
+                {
+                    string text = File.ReadAllText(files[i]);
+                    text = text.Replace("mcr.microsoft.com/dotnet/framework/sdk:4.8", "mcr.microsoft.com/dotnet/sdk:5.0");
+                    text = text.Replace("mcr.microsoft.com/dotnet/framework/runtime:4.8", "mcr.microsoft.com/dotnet/runtime:5.0");
+                    File.WriteAllText(files[i], text);
+                }
+                Console.WriteLine("Completed updating the docker file.");
+            }
+            catch(Exception ex)
+            {
+                throw ex;
+            }            
         }
 
         public static async Task CommitFileToRepository(string owner,string filePath)
         {
-            var newRepo = new NewRepository("MigratedConsoleApp")
+            try
             {
-                AutoInit = true,
-                Description = "This is the repository for the migrated console application",
-                HasIssues = false,
-                HasWiki = true,
-                Private = false                
-            };
+                Console.WriteLine("Creating the new repository in GitHub.");
+                var newRepo = new NewRepository("MigratedConsoleApp")
+                {
+                    AutoInit = true,
+                    HasIssues = false,
+                    HasWiki = true,
+                    Private = false
+                };
 
-            string ghtoken = "dfaaa38be43e1c4a045d5077109b452aaf479879";
-            var ghClient = new GitHubClient(new Octokit.ProductHeaderValue("MigratedConsoleApp"));
-            ghClient.Credentials = new Octokit.Credentials(ghtoken);
+                string ghtoken = "4bc4b5e44039c91d404439f0dc384fb000ab4e8c";
+                var ghClient = new GitHubClient(new Octokit.ProductHeaderValue("MigratedConsoleApp"));
+                ghClient.Credentials = new Octokit.Credentials(ghtoken);
 
-            var repositoryResponse = ghClient.Repository.Create(newRepo).Result;
-            string cloneUrl = repositoryResponse.CloneUrl.ToString();
+                var repositoryResponse = ghClient.Repository.Create(newRepo).Result;
+                string cloneUrl = repositoryResponse.CloneUrl.ToString();
+
+
+                CommitAllChanges("Commiting the migrated project", filePath, cloneUrl).Wait();
+            }
+            catch(Exception ex)
+            {
+                throw;
+            }
             
-
-            CommitAllChanges("Commiting the migrated project",filePath, cloneUrl).Wait();
         }
 
         public static async Task CommitAllChanges(string message,string filePath, string cloneUrl)
         {
             try
             {
+                Console.WriteLine("Commit all changes to GitHub.");
                 var _folder = new DirectoryInfo(filePath);
                 string path = LibGit2Sharp.Repository.Init(_folder.FullName);
                 using (var repo = new LibGit2Sharp.Repository(path))
@@ -203,17 +251,27 @@ namespace DotNetMigrationTool
                     var options = new PushOptions
                     {
                         CredentialsProvider = (_url, _user, _cred) =>
-                            new UsernamePasswordCredentials { Username = "sormita@gmail.com", Password = "dfaaa38be43e1c4a045d5077109b452aaf479879" }
+                            new UsernamePasswordCredentials { Username = "sormita@gmail.com", Password = "0b60084fead07fe92c1f583ff5a574882400c242" }
                     };
 
-                    string pushRefSpec = @"refs/heads/master";
+                    var fetchOptions = new FetchOptions {
+                        CredentialsProvider = (_url, _user, _cred) =>
+                            new UsernamePasswordCredentials { Username = "sormita@gmail.com", Password = "0b60084fead07fe92c1f583ff5a574882400c242" }
+                    };
 
+                    string pushRefSpec = @"+refs/heads/master";
+
+                    List<string> fetchString = new List<string>();
+                    fetchString.Add(pushRefSpec);
+
+                    repo.Network.Fetch("origin", fetchString, fetchOptions);
+                                        
                     repo.Network.Push(remote, pushRefSpec, options);
                 }
             }
             catch (Exception ex)
             {
-                throw ex;
+                throw;
             }
             
             
