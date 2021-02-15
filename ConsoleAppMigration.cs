@@ -13,69 +13,12 @@ namespace DotNetMigrationTool
 {
     public static class ConsoleAppMigration
     {
-        //public static async Task GetProjectFilesAsync(string repo, string owner, string branch, string applicationFolder)
-        //{
-        //    string ghtoken = "4bc4b5e44039c91d404439f0dc384fb000ab4e8c";
-        //    var ghClient = new GitHubClient(new Octokit.ProductHeaderValue("dotnetconsoleapp-migrate"));
-        //    ghClient.Credentials = new Octokit.Credentials(ghtoken);
-
-        //    //Look for files with .csproj extension  
-        //    var existingFile = ghClient.Repository.Content.GetAllContentsByRef(owner, repo, applicationFolder, branch).Result;
-
-        //    for (int i = 0; i < existingFile.Count; i++)
-        //    {
-        //        if (existingFile[i].Name.Contains(".csproj"))
-        //        {
-        //            string appFolder = applicationFolder + "/" + existingFile[i].Name;
-                    
-        //            using(HttpClient _httpClient=new HttpClient())
-        //            {
-        //                using (HttpResponseMessage response = _httpClient.GetAsync(existingFile[i].DownloadUrl).Result)
-        //                {
-        //                    response.EnsureSuccessStatusCode();
-        //                    string responseBody = await response.Content.ReadAsStringAsync();
-        //                    string oldNetVersion = "<TargetFramework>net48</TargetFramework>";
-        //                    string newNetVersion= "<TargetFramework>net50</TargetFramework>";
-        //                    responseBody = responseBody.Replace(oldNetVersion, newNetVersion);
-
-        //                    var res= ghClient.Repository.Content.GetAllContents(owner, repo, appFolder).Result;
-
-        //                    // update the file
-        //                    var updateChangeSet = ghClient.Repository.Content.UpdateFile(owner, repo, existingFile[i].Name,
-        //                        new UpdateFileRequest("API File update", responseBody, existingFile[i].Sha, branch)).Result;
-        //                }
-        //            }
-                    
-        //        }
-        //    }
-
-        //}
-
-        public static async Task CloneRepository(string repo, string owner)
+        public static async Task MigrateConsoleApp(string repo, string owner,string file_path)
         {
-            try
-            {
-                Console.WriteLine("Cloning the repository to a local volume");
-                string ghtoken = "4bc4b5e44039c91d404439f0dc384fb000ab4e8c";
-                var ghClient = new GitHubClient(new Octokit.ProductHeaderValue("dotnetconsoleapp-migrate"));
-                ghClient.Credentials = new Octokit.Credentials(ghtoken);
-
-                var archiveBytes = ghClient.Repository.Content.GetArchive(owner, repo, ArchiveFormat.Zipball).Result;
-                string path = @"C:\Users\SormitaChakraborty\source\repos\DotNetMigration\WorkingDirectory\" + repo + ".zip";
-                string extractPath = @"C:\Users\SormitaChakraborty\source\repos\DotNetMigration\WorkingDirectory\" + repo;
-                File.WriteAllBytes(path, archiveBytes);
-
-                Console.WriteLine("Extracting the files to a local volume");
-                //Extract the files
-                System.IO.Compression.ZipFile.ExtractToDirectory(path, extractPath);
-                ModifyFilesToFitMigration(extractPath, owner).Wait();
-            }
-            catch(Exception ex)
-            {
-                throw ex;
-            }
-            
+            var extractPath= GitMethods.CloneRepository(repo, owner, file_path).Result;
+            ModifyFilesToFitMigration(extractPath.ToString(), owner).Wait();
         }
+        
 
         public static async Task ModifyFilesToFitMigration(string filePath,string owner)
         {
@@ -86,7 +29,7 @@ namespace DotNetMigrationTool
             UpdateDockerFile(filePath);
 
             //Check in the file to a new repository
-            CommitFileToRepository(owner, filePath);
+            GitMethods.CommitFileToRepository(owner, filePath,"MigratedConsoleApp");
 
         }
 
@@ -198,83 +141,6 @@ namespace DotNetMigrationTool
             }            
         }
 
-        public static async Task CommitFileToRepository(string owner,string filePath)
-        {
-            try
-            {
-                Console.WriteLine("Creating the new repository in GitHub.");
-                var newRepo = new NewRepository("MigratedConsoleApp")
-                {
-                    AutoInit = true,
-                    HasIssues = false,
-                    HasWiki = true,
-                    Private = false
-                };
-
-                string ghtoken = "4bc4b5e44039c91d404439f0dc384fb000ab4e8c";
-                var ghClient = new GitHubClient(new Octokit.ProductHeaderValue("MigratedConsoleApp"));
-                ghClient.Credentials = new Octokit.Credentials(ghtoken);
-
-                var repositoryResponse = ghClient.Repository.Create(newRepo).Result;
-                string cloneUrl = repositoryResponse.CloneUrl.ToString();
-
-
-                CommitAllChanges("Commiting the migrated project", filePath, cloneUrl).Wait();
-            }
-            catch(Exception ex)
-            {
-                throw;
-            }
-            
-        }
-
-        public static async Task CommitAllChanges(string message,string filePath, string cloneUrl)
-        {
-            try
-            {
-                Console.WriteLine("Commit all changes to GitHub.");
-                var _folder = new DirectoryInfo(filePath);
-                string path = LibGit2Sharp.Repository.Init(_folder.FullName);
-                using (var repo = new LibGit2Sharp.Repository(path))
-                {                    
-                    var files = _folder.GetFiles("*", SearchOption.AllDirectories).Select(f => f.FullName);
-                    Commands.Stage(repo, "*");
-
-                    repo.Commit(message, new LibGit2Sharp.Signature("sormita", "sormita@gmail.com", DateTimeOffset.Now),
-                         new LibGit2Sharp.Signature("sormita", "sormita@gmail.com", DateTimeOffset.Now));
-
-                    //push files                
-                    string name = "origin";
-                    repo.Network.Remotes.Add(name, cloneUrl);
-                    var remote = repo.Network.Remotes.FirstOrDefault(r => r.Name == name);
-
-                    var options = new PushOptions
-                    {
-                        CredentialsProvider = (_url, _user, _cred) =>
-                            new UsernamePasswordCredentials { Username = "sormita@gmail.com", Password = "0b60084fead07fe92c1f583ff5a574882400c242" }
-                    };
-
-                    var fetchOptions = new FetchOptions {
-                        CredentialsProvider = (_url, _user, _cred) =>
-                            new UsernamePasswordCredentials { Username = "sormita@gmail.com", Password = "0b60084fead07fe92c1f583ff5a574882400c242" }
-                    };
-
-                    string pushRefSpec = @"+refs/heads/master";
-
-                    List<string> fetchString = new List<string>();
-                    fetchString.Add(pushRefSpec);
-
-                    repo.Network.Fetch("origin", fetchString, fetchOptions);
-                                        
-                    repo.Network.Push(remote, pushRefSpec, options);
-                }
-            }
-            catch (Exception ex)
-            {
-                throw;
-            }
-            
-            
-        }
+        
     }
 }

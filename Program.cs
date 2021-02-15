@@ -12,8 +12,9 @@ namespace DotNetMigrationTool
             var owner = ConfigurationManager.AppSettings["owner"];
             var branch = ConfigurationManager.AppSettings["branch"];
             var applicationFolder = ConfigurationManager.AppSettings["applicationFolder"];
-            //ConsoleAppMigration.GetProjectFilesAsync(repo, owner, branch, applicationFolder).Wait();
-            ConsoleAppMigration.CloneRepository(repo, owner);
+            var file_path = ConfigurationManager.AppSettings["filepath"];
+            //ConsoleAppMigration.MigrateConsoleApp(repo, owner, file_path);    
+            MVCCoreContainerize.ContainerApplication(repo, owner, file_path);
         }
     }
 }
